@@ -1,0 +1,42 @@
+name: coastsnap
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # PyTorch with CUDA — install via conda for reliable CUDA linkage
+  - pytorch>=2.3.1
+  - torchvision>=0.18.1
+  - torchaudio
+  - pytorch-cuda=12.1
+
+  # Core scientific stack
+  - numpy>=1.26
+  - scipy>=1.13
+  - pillow>=10.3
+
+  # Image processing
+  - opencv>=4.9
+
+  # Visualization
+  - matplotlib>=3.9
+
+  # Config
+  - pyyaml>=6.0
+
+  # Notebooks
+  - jupyterlab>=4.2
+  - ipywidgets>=8.1
+
+  # Utilities
+  - tqdm>=4.66
+
+  # pip-only packages
+  - pip:
+      # SAM2 — must be installed from source
+      - git+https://github.com/facebookresearch/sam2.git

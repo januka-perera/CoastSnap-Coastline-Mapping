@@ -1,0 +1,35 @@
+# CoastSnap Coastline Mapping — pip requirements
+#
+# NOTE: PyTorch must be installed separately via conda (see environment.yml)
+# before installing these. SAM2 requires torch to already be present.
+#
+# To set up from scratch:
+#   conda env create -f environment.yml
+#   conda activate coastsnap
+#
+# To install into an existing environment:
+#   pip install -r requirements.txt
+
+# SAM2 — install from Meta's official repo
+git+https://github.com/facebookresearch/sam2.git
+
+# Core scientific stack
+numpy>=1.26
+scipy>=1.13
+Pillow>=10.3
+
+# Image processing
+opencv-python>=4.9
+
+# Visualization
+matplotlib>=3.9
+
+# Config
+pyyaml>=6.0
+
+# Notebooks
+jupyterlab>=4.2
+ipywidgets>=8.1
+
+# Utilities
+tqdm>=4.66
