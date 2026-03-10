@@ -1,27 +1,14 @@
 name: coastsnap
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
-  - defaults
 
 dependencies:
-  - python=3.11
+  - python=3.12
   - pip
-
-  # PyTorch with CUDA — install via conda for reliable CUDA linkage
-  - pytorch>=2.3.1
-  - torchvision>=0.18.1
-  - torchaudio
-  - pytorch-cuda=12.1
 
   # Core scientific stack
   - numpy>=1.26
   - scipy>=1.13
-  - pillow>=10.3
-
-  # Image processing
-  - opencv>=4.9
 
   # Visualization
   - matplotlib>=3.9
@@ -36,7 +23,17 @@ dependencies:
   # Utilities
   - tqdm>=4.66
 
-  # pip-only packages
+  # pip-only packages (PyTorch installed via pip to avoid conda channel conflicts)
   - pip:
+      # PyTorch with CUDA 12.4 — update cu124 if your CUDA version differs
+      - --index-url https://download.pytorch.org/whl/cu124
+      - torch==2.6.0+cu124
+      - torchvision==0.21.0+cu124
+      - torchaudio==2.6.0+cu124
+      - pillow>=10.3
+      - opencv-python>=4.9
       # SAM2 — must be installed from source
       - git+https://github.com/facebookresearch/sam2.git
+
+variables:
+  KMP_DUPLICATE_LIB_OK: "TRUE"
