@@ -1,5 +1,5 @@
 model:
-  checkpoint: models/checkpoints/sam2.1_hiera_tiny.pt
+  checkpoint: models/checkpoints/sam2.1_hiera_base_plus.pt
   device: cuda  # cuda or cpu
 
 data:
