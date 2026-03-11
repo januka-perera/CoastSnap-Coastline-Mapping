@@ -1,0 +1,11 @@
+model:
+  checkpoint: models/checkpoints/sam2.1_hiera_tiny.pt
+  device: cuda  # cuda or cpu
+
+data:
+  raw_dir: data/raw
+  reference_dir: data/reference
+
+output:
+  masks_dir: outputs/masks
+  visualizations_dir: outputs/visualizations
