@@ -37,14 +37,23 @@ mamba env create -f environment.yml
 mamba activate coastsnap
 ```
 
-### 4. Download SAM2 model checkpoints
+### 4. Install SAM2 and download model checkpoints
+
+SAM2 must be installed as an editable install from a local clone. The clone **must not** be named `sam2` — it would shadow the installed Python package. Clone it as `sam2-source`:
 
 ```bash
-# Clone the SAM2 repo to access the download script
-git clone https://github.com/facebookresearch/sam2.git
-cd sam2
-python tools/download_ckpts.py
-cd ..
+git clone https://github.com/facebookresearch/sam2.git sam2-source
+pip install -e sam2-source
+```
+
+> **Why editable?** Installing SAM2 via `pip install git+...` does not bundle the Hydra config YAML files needed at runtime. An editable install from a local clone makes them available in-place.
+
+Then download the model checkpoints:
+
+```bash
+cd sam2-source/checkpoints
+bash download_ckpts.sh
+cd ../..
 ```
 
 Move the downloaded `.pt` files into `models/checkpoints/`. The recommended checkpoint for this project is `sam2.1_hiera_base_plus.pt`.
@@ -53,6 +62,7 @@ Move the downloaded `.pt` files into `models/checkpoints/`. The recommended chec
 
 ```
 CoastSnap-Coastline-Mapping/
+├── sam2-source/                    # SAM2 repo clone (gitignored)
 ├── data/
 │   ├── raw/                        # Original, unmodified images (never edited)
 │   │   └── <site_name>/

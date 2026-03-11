@@ -32,8 +32,11 @@ dependencies:
       - torchaudio==2.6.0+cu124
       - pillow>=10.3
       - opencv-python>=4.9
-      # SAM2 — must be installed from source
-      - git+https://github.com/facebookresearch/sam2.git
+      # SAM2 — installed separately as an editable install (see README Setup section)
+      # Do NOT install via git+ URL; the config YAML files are not bundled in the pip package.
+      # After creating this environment, run:
+      #   git clone https://github.com/facebookresearch/sam2.git sam2-source
+      #   pip install -e sam2-source
 
 variables:
   KMP_DUPLICATE_LIB_OK: "TRUE"
