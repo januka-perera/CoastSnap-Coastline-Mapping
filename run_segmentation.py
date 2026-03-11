@@ -19,8 +19,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import torch
 import yaml
-import torch 
 from src.segmentation.postprocess import clean_mask
 from src.segmentation.predictor import BeachSegmentor
 from src.utils.io import list_images, load_annotations, load_image_rgb, save_mask
@@ -42,8 +42,8 @@ def main():
 
     raw_dir = Path(cfg["data"]["raw_dir"]) / args.site
     ref_dir = Path(cfg["data"]["reference_dir"]) / args.site
-    masks_dir = Path(cfg["output"]["masks_dir"]) / args.site
-    vis_dir = Path(cfg["output"]["visualizations_dir"]) / args.site
+    masks_dir = Path(cfg["output"]["masks_dir"]) / "points" / args.site
+    vis_dir = Path(cfg["output"]["visualizations_dir"]) / "points" / args.site
 
     # Load annotations
     ann_path = ref_dir / "annotations.json"
