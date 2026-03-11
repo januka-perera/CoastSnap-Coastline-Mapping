@@ -205,3 +205,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# CoastSnap project data, outputs, and archives (large files)
+archive/
+
+# CoastSnap project data and outputs (large files)
+data/raw/
+data/processed/
+outputs/masks/
+outputs/visualizations/
+outputs/shorelines/
+models/checkpoints/*.pt
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/reference/.gitkeep
+!outputs/masks/.gitkeep
+!outputs/visualizations/.gitkeep
+!models/checkpoints/.gitkeep
+
+# SAM2 source clone (installed as editable package via pip install -e sam2-source)
+sam2/
+sam2-source/
