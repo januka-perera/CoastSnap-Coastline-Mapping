@@ -216,6 +216,7 @@ outputs/masks/
 outputs/visualizations/
 outputs/shorelines/
 models/checkpoints/*.pt
+data/reference/*/reference_mask.png
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/reference/.gitkeep
