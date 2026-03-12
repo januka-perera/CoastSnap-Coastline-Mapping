@@ -6,9 +6,10 @@ Copies masks, visualizations, and annotations into a timestamped folder under
 archive/<site>/<timestamp>/ so good runs are preserved before re-processing.
 
 Usage:
-    python tools/archive_results.py --site <site_name>
-    python tools/archive_results.py --site <site_name> --config configs/config.yaml
-    python tools/archive_results.py --site <site_name> --note "good tide conditions"
+    python tools/archive_results.py --site <site_name> --mode points
+    python tools/archive_results.py --site <site_name> --mode video
+    python tools/archive_results.py --site <site_name> --mode points --config configs/config.yaml
+    python tools/archive_results.py --site <site_name> --mode points --note "good tide conditions"
 """
 
 import argparse
@@ -43,14 +44,15 @@ def copy_dir(src: Path, dst: Path) -> int:
 def main():
     parser = argparse.ArgumentParser(description="Archive segmentation results for a CoastSnap site.")
     parser.add_argument("--site", required=True, help="Site name (e.g. narrabeen)")
+    parser.add_argument("--mode", required=True, choices=["points", "video"], help="Segmentation mode to archive (points or video)")
     parser.add_argument("--config", default="configs/config.yaml", help="Path to config.yaml")
     parser.add_argument("--note", default="", help="Optional note saved alongside the archive")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
 
-    masks_src      = Path(cfg["output"]["masks_dir"]) / args.site
-    vis_src        = Path(cfg["output"]["visualizations_dir"]) / args.site
+    masks_src      = Path(cfg["output"]["masks_dir"]) / args.mode / args.site
+    vis_src        = Path(cfg["output"]["visualizations_dir"]) / args.mode / args.site
     annotations_src = Path(cfg["data"]["reference_dir"]) / args.site / "annotations.json"
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
