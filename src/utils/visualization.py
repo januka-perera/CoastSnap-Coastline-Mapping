@@ -28,6 +28,27 @@ def draw_points(
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def draw_shoreline(
+    image_rgb: np.ndarray,
+    pts: np.ndarray,
+    color: tuple[int, int, int] = (0, 255, 255),
+    thickness: int = 2,
+) -> np.ndarray:
+    """Draw a shoreline polyline on a copy of the image (RGB in, RGB out)."""
+    if len(pts) < 2:
+        return image_rgb.copy()
+    vis = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+    cv2.polylines(
+        vis,
+        [pts.astype(np.int32).reshape(-1, 1, 2)],
+        isClosed=False,
+        color=color,
+        thickness=thickness,
+        lineType=cv2.LINE_AA,
+    )
+    return cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
+
+
 def save_visualization(image_rgb: np.ndarray, path: str | Path) -> None:
     """Save RGB image to disk as JPEG."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
