@@ -212,6 +212,7 @@ archive/
 # CoastSnap project data and outputs (large files)
 data/raw/
 data/processed/
+data/geotiffs
 outputs/masks/
 outputs/visualizations/
 outputs/shorelines/
