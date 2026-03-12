@@ -215,6 +215,7 @@ data/processed/
 outputs/masks/
 outputs/visualizations/
 outputs/shorelines/
+outputs/comparisons
 models/checkpoints/*.pt
 data/reference/*/reference_mask.png
 !data/raw/.gitkeep
