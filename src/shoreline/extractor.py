@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.signal import savgol_filter
+from skimage.measure import find_contours
 
 
 def extract_shoreline(
@@ -62,6 +63,72 @@ def extract_shoreline(
         return np.empty((0, 2), dtype=np.float32)
 
     return np.array(pts, dtype=np.float32)
+
+
+def extract_shoreline_from_logits(
+    logit: np.ndarray,
+    masked_region: str = "sand",
+    border_margin: int = 5,
+    min_length: int = 50,
+) -> np.ndarray:
+    """
+    Extract shoreline (x, y) coordinates as the zero contour of a SAM2 logit field.
+
+    SAM2 logits are positive where the model predicts the segmented class and
+    negative elsewhere. The zero crossing is the subpixel-stable decision boundary
+    — equivalent to a 0.5 probability threshold but without quantisation to pixel
+    edges. Marching squares is used so the result works for both plan-view and
+    oblique images with no assumption about shoreline orientation.
+
+    Parameters
+    ----------
+    logit : np.ndarray, float32 (H, W)
+        Raw SAM2 logit field at image resolution.
+    masked_region : str
+        ``"sand"`` if the segmented class is dry/wet sand (default), or
+        ``"ocean"`` if the segmented class is water. When ``"ocean"``, the
+        logit is negated so the zero contour always represents the sand side.
+    border_margin : int
+        Contour points within this many pixels of any image edge are dropped.
+    min_length : int
+        Minimum number of points a contour must have to be considered. Filters
+        out small noise blobs.
+
+    Returns
+    -------
+    np.ndarray, shape (N, 2), float32
+        Shoreline points as (x, y). Returns empty array if no valid contour is found.
+    """
+    h, w = logit.shape
+    field = logit if masked_region == "sand" else -logit
+
+    # find_contours returns a list of (N, 2) arrays in (row, col) = (y, x) order
+    contours = find_contours(field, level=0.0)
+    if not contours:
+        return np.empty((0, 2), dtype=np.float32)
+
+    # Filter: minimum length and not entirely within the image border
+    valid = []
+    for c in contours:
+        if len(c) < min_length:
+            continue
+        rows, cols = c[:, 0], c[:, 1]
+        # Keep contour if it has points away from all four borders
+        interior = (
+            (rows >= border_margin) & (rows < h - border_margin) &
+            (cols >= border_margin) & (cols < w - border_margin)
+        )
+        if interior.sum() < min_length:
+            continue
+        valid.append(c[interior])
+
+    if not valid:
+        return np.empty((0, 2), dtype=np.float32)
+
+    # Return the longest valid contour, converted from (row, col) to (x, y)
+    longest = max(valid, key=len)
+    pts = np.column_stack([longest[:, 1], longest[:, 0]]).astype(np.float32)
+    return pts
 
 
 def smooth_shoreline(
