@@ -47,3 +47,15 @@ def save_mask(mask: np.ndarray, path: str | Path) -> None:
     """Save binary mask as PNG (0 or 255)."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(path), (mask * 255).astype(np.uint8))
+
+
+def save_logit(logit: np.ndarray, path: str | Path) -> None:
+    """Save float32 logit field as a .npy file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(str(path), logit.astype(np.float32))
+
+
+def load_logit(path: str | Path) -> np.ndarray:
+    """Load float32 logit field from a .npy file."""
+    return np.load(str(path)).astype(np.float32)
