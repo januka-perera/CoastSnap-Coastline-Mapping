@@ -2,20 +2,23 @@
 """
 Interactive annotation tool for CoastSnap beach segmentation.
 
-Collect positive/negative SAM2 point prompts on a reference image and save
-them to data/reference/<site>/annotations.json.
+Collect positive/negative SAM2 point prompts for each image in
+data/reference/<site>/ and save them to data/reference/<site>/annotations.json.
+
+To use multiple reference frames, place copies of the relevant raw images into
+data/reference/<site>/ before running this tool. Each image found there will be
+annotated in sequence.
 
 Usage:
     python tools/annotate.py --site <site_name>
-    python tools/annotate.py --site <site_name> --image <path/to/image.jpg>
 
 Controls:
     Left click   Add positive point  (green — beach/sand)
     Right click  Add negative point  (red   — water/sky/non-beach)
     z            Undo last point
     r            Reset all points
-    s            Save and exit
-    q            Quit without saving
+    s            Save and continue to next image
+    q            Skip this image and stop
 """
 
 import argparse
@@ -28,6 +31,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.utils.io import list_images, load_annotations, load_image_rgb, save_annotations
+
 
 def _max_display_dim() -> int:
     """Return a display limit (px) that fits within the current screen, with margin."""
@@ -69,7 +73,7 @@ def _render(image_rgb: np.ndarray, positive: list, negative: list, scale: float)
     status = (
         f"  +{len(positive)} positive (L-click)   "
         f"-{len(negative)} negative (R-click)   |   "
-        "z=undo   r=reset   s=save   q=quit"
+        "z=undo   r=reset   s=save/next   q=skip+stop"
     )
     bar = np.zeros((28, dw, 3), dtype=np.uint8)
     cv2.putText(bar, status, (6, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (200, 200, 200), 1, cv2.LINE_AA)
@@ -130,14 +134,9 @@ def annotate(image_rgb: np.ndarray, existing: dict | None = None) -> dict | None
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Annotate a CoastSnap reference image with SAM2 point prompts."
+        description="Annotate CoastSnap reference images with SAM2 point prompts."
     )
     parser.add_argument("--site", required=True, help="Site name (e.g. narrabeen)")
-    parser.add_argument(
-        "--image",
-        default=None,
-        help="Path to image file. Defaults to the first image in data/reference/<site>/",
-    )
     parser.add_argument(
         "--data-root",
         default=".",
@@ -148,40 +147,57 @@ def main():
     data_root = Path(args.data_root)
     ref_dir = data_root / "data" / "reference" / args.site
     ref_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.image:
-        image_path = Path(args.image)
-    else:
-        candidates = list_images(ref_dir)
-        if not candidates:
-            print(f"No images found in {ref_dir}.")
-            print("Place a reference image there, or pass --image <path>.")
-            sys.exit(1)
-        image_path = candidates[0]
-
-    print(f"Image:  {image_path}")
-    image_rgb = load_image_rgb(image_path)
-
     ann_path = ref_dir / "annotations.json"
-    existing = None
+
+    image_paths = list_images(ref_dir)
+    if not image_paths:
+        print(f"No images found in {ref_dir}.")
+        print("Place one or more reference images there first.")
+        sys.exit(1)
+
+    print(f"Found {len(image_paths)} image(s) in {ref_dir}")
+
+    # Load existing annotations (handles old single-dict format automatically)
+    existing_list: list[dict] = []
     if ann_path.exists():
-        existing = load_annotations(ann_path)
-        n_pos = len(existing.get("positive_points", []))
-        n_neg = len(existing.get("negative_points", []))
-        print(f"Loaded existing annotations: {n_pos} positive, {n_neg} negative")
+        existing_list = load_annotations(ann_path)
 
-    result = annotate(image_rgb, existing)
+    existing_by_image = {entry["image"]: entry for entry in existing_list}
 
-    if result is None:
-        print("Cancelled — nothing saved.")
+    # Annotate each reference image in sequence
+    new_results: list[dict] = []
+    for i, image_path in enumerate(image_paths):
+        print(f"\n[{i + 1}/{len(image_paths)}] {image_path.name}")
+
+        existing_entry = existing_by_image.get(image_path.name)
+        if existing_entry:
+            n_pos = len(existing_entry.get("positive_points", []))
+            n_neg = len(existing_entry.get("negative_points", []))
+            print(f"  Loaded existing: {n_pos} positive, {n_neg} negative")
+
+        image_rgb = load_image_rgb(image_path)
+        result = annotate(image_rgb, existing_entry)
+
+        if result is None:
+            print("  Skipped — stopping.")
+            break
+
+        result["image"] = image_path.name
+        new_results.append(result)
+        print(
+            f"  Saved {len(result['positive_points'])} positive, "
+            f"{len(result['negative_points'])} negative."
+        )
+
+    if not new_results:
+        print("\nNothing saved.")
         return
 
-    result["image"] = image_path.name
-    save_annotations(result, ann_path)
-    print(
-        f"Saved {len(result['positive_points'])} positive and "
-        f"{len(result['negative_points'])} negative points → {ann_path}"
-    )
+    # Merge: preserve existing entries for images not re-annotated this session
+    new_names = {r["image"] for r in new_results}
+    merged = [e for e in existing_list if e["image"] not in new_names] + new_results
+    save_annotations(merged, ann_path)
+    print(f"\n{len(merged)} annotation(s) saved → {ann_path}")
 
 
 if __name__ == "__main__":
