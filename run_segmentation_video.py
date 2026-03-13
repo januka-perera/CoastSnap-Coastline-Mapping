@@ -34,7 +34,7 @@ import yaml
 from sam2.build_sam import build_sam2_video_predictor
 from src.segmentation.predictor import _CHECKPOINT_TO_CONFIG
 from src.segmentation.postprocess import clean_mask
-from src.utils.io import list_images, load_annotations, load_image_rgb, save_mask
+from src.utils.io import list_images, load_annotations, load_image_rgb, save_logit, save_mask
 from src.utils.visualization import draw_points, overlay_mask, save_visualization
 
 
@@ -65,8 +65,9 @@ def main():
 
     raw_dir   = Path(cfg["data"]["raw_dir"]) / args.site
     ref_dir   = Path(cfg["data"]["reference_dir"]) / args.site
-    masks_dir = Path(cfg["output"]["masks_dir"]) / "video" / args.site
-    vis_dir   = Path(cfg["output"]["visualizations_dir"]) / "video" / args.site
+    masks_dir  = Path(cfg["output"]["masks_dir"]) / "video" / args.site
+    logits_dir = Path(cfg["output"]["masks_dir"]).parent / "logits" / "video" / args.site
+    vis_dir    = Path(cfg["output"]["visualizations_dir"]) / "video" / args.site
 
     # Load annotations
     ann_path = ref_dir / "annotations.json"
@@ -148,10 +149,23 @@ def main():
                 normalize_coords=True,
             )
 
-        # Propagate through all frames (starts from frame 0 by default)
-        print("Propagating through all frames ...")
+        logits_by_frame: dict[int, np.ndarray] = {}
+
+        # Propagate forward from the first annotated frame to the last frame
+        print("Propagating forward ...")
         for frame_idx, _obj_ids, mask_logits in predictor.propagate_in_video(inference_state):
-            masks_by_frame[frame_idx] = (mask_logits[0, 0].cpu().numpy() > 0)
+            logits_by_frame[frame_idx] = mask_logits[0, 0].cpu().numpy()
+            masks_by_frame[frame_idx] = logits_by_frame[frame_idx] > 0
+
+        # Propagate backward to fill any frames before the first annotated frame
+        if len(logits_by_frame) < len(images):
+            print("Propagating backward to fill remaining frames ...")
+            for frame_idx, _obj_ids, mask_logits in predictor.propagate_in_video(
+                inference_state, reverse=True
+            ):
+                if frame_idx not in logits_by_frame:
+                    logits_by_frame[frame_idx] = mask_logits[0, 0].cpu().numpy()
+                    masks_by_frame[frame_idx] = logits_by_frame[frame_idx] > 0
 
     # Save masks and visualizations
     print()
@@ -161,15 +175,15 @@ def main():
         image = load_image_rgb(img_path)
         h, w = image.shape[:2]
 
-        raw_mask = masks_by_frame[i]
-        if raw_mask.shape != (h, w):
-            raw_mask = cv2.resize(
-                raw_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST
-            ).astype(bool)
+        raw_logit = logits_by_frame[i]
+        if raw_logit.shape != (h, w):
+            raw_logit = cv2.resize(raw_logit, (w, h), interpolation=cv2.INTER_LINEAR)
 
+        raw_mask = raw_logit > 0
         mask = clean_mask(raw_mask)
 
         save_mask(mask, masks_dir / f"{img_path.stem}.png")
+        save_logit(raw_logit, logits_dir / f"{img_path.stem}.npy")
 
         vis = overlay_mask(image, mask)
         if i in frame_annotations:
