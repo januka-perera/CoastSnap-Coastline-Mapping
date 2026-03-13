@@ -46,10 +46,18 @@ class BeachSegmentor:
         self,
         positive_points: list[list[int]],
         negative_points: list[list[int]] | None = None,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Run SAM2 with point prompts. Returns the best binary mask (H, W) bool.
-        Points are [x, y] pixel coordinates.
+        Run SAM2 with point prompts.
+
+        Returns
+        -------
+        mask : np.ndarray, bool (H, W)
+            Best binary mask (sigmoid(logit) > 0.5).
+        logit : np.ndarray, float32 (H, W)
+            Raw logit field upsampled to image resolution. Positive = predicted
+            foreground, negative = predicted background. The zero contour of
+            this field is the subpixel-stable decision boundary.
         """
         all_points = positive_points + (negative_points or [])
         all_labels = [1] * len(positive_points) + [0] * len(negative_points or [])
@@ -58,14 +66,21 @@ class BeachSegmentor:
         point_labels = np.array(all_labels, dtype=np.int32)
 
         with torch.inference_mode():
-            masks, scores, _ = self._predictor.predict(
+            masks, scores, low_res_logits = self._predictor.predict(
                 point_coords=point_coords,
                 point_labels=point_labels,
                 multimask_output=True,
             )
 
         best_idx = int(np.argmax(scores))
-        return masks[best_idx]  # bool (H, W)
+        mask = masks[best_idx]  # bool (H, W)
+
+        # Upsample the 256×256 low-res logit to full image resolution
+        h, w = mask.shape
+        logit_256 = low_res_logits[best_idx, 0]  # (256, 256)
+        logit = cv2.resize(logit_256, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        return mask, logit
 
     def predict_from_mask(self, reference_mask: np.ndarray) -> np.ndarray:
         """
