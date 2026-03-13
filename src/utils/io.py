@@ -23,13 +23,20 @@ def list_images(directory: str | Path) -> list[Path]:
     return sorted(p for p in directory.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
 
 
-def load_annotations(path: str | Path) -> dict:
-    """Load point annotations from JSON file."""
+def load_annotations(path: str | Path) -> list[dict]:
+    """Load point annotations from JSON file.
+
+    Returns a list of annotation dicts (one per annotated frame).
+    Old single-dict files are automatically wrapped in a list.
+    """
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    if isinstance(data, dict):
+        return [data]
+    return data
 
 
-def save_annotations(annotations: dict, path: str | Path) -> None:
+def save_annotations(annotations: list[dict], path: str | Path) -> None:
     """Save point annotations to JSON file."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
