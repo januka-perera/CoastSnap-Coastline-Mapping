@@ -161,8 +161,16 @@ def main():
     for i, img_path in enumerate(images):
         print(f"[{i + 1}/{len(images)}] {img_path.name}", end=" ... ", flush=True)
 
-        mask = clean_mask(masks_by_frame[i])
         image = load_image_rgb(img_path)
+        h, w = image.shape[:2]
+
+        raw_mask = masks_by_frame[i]
+        if raw_mask.shape != (h, w):
+            raw_mask = cv2.resize(
+                raw_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST
+            ).astype(bool)
+
+        mask = clean_mask(raw_mask)
 
         save_mask(mask, masks_dir / f"{img_path.stem}.png")
 
