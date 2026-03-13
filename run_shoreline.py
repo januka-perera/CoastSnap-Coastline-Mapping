@@ -30,8 +30,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.shoreline.extractor import extract_shoreline, smooth_shoreline
-from src.utils.io import list_images, load_image_rgb
+from src.shoreline.extractor import extract_shoreline, extract_shoreline_from_logits, smooth_shoreline
+from src.utils.io import list_images, load_image_rgb, load_logit
 from src.utils.visualization import draw_shoreline, overlay_mask, save_visualization
 
 
@@ -75,9 +75,10 @@ def main():
 
     cfg = load_config(args.config)
 
-    masks_dir = Path(cfg["output"]["masks_dir"]) / args.mode / args.site
-    raw_dir   = Path(cfg["data"]["raw_dir"]) / args.site
-    out_dir   = Path("outputs/shorelines") / args.mode / args.site
+    masks_dir  = Path(cfg["output"]["masks_dir"]) / args.mode / args.site
+    logits_dir = Path(cfg["output"]["masks_dir"]).parent / "logits" / args.mode / args.site
+    raw_dir    = Path(cfg["data"]["raw_dir"]) / args.site
+    out_dir    = Path("outputs/shorelines") / args.mode / args.site
 
     if not masks_dir.exists():
         run_script = "run_segmentation_video.py" if args.mode == "video" else "run_segmentation.py"
@@ -93,9 +94,13 @@ def main():
     originals = {p.stem: p for p in list_images(raw_dir)} if raw_dir.exists() else {}
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    use_logits = logits_dir.exists() and any(logits_dir.glob("*.npy"))
+    source_label = "logits (subpixel)" if use_logits else "binary masks"
+
     print(f"Site:           {args.site}")
     print(f"Mode:           {args.mode}")
     print(f"Masked region:  {args.masked_region}")
+    print(f"Source:         {source_label}")
     print(f"Masks:          {len(mask_paths)}")
     print()
 
@@ -105,13 +110,16 @@ def main():
         print(f"[{i}/{len(mask_paths)}] {mask_path.name}", end=" ... ", flush=True)
 
         mask = load_mask(mask_path)
-
-        # When the ocean was segmented the sand-facing edge is still the
-        # shoreline — invert so the extraction logic always sees a sand mask.
         if args.masked_region == "ocean":
             mask = ~mask
 
-        pts = extract_shoreline(mask, left_margin=args.left_margin, right_margin=args.right_margin)
+        logit_path = logits_dir / f"{stem}.npy"
+        if use_logits and logit_path.exists():
+            logit = load_logit(logit_path)
+            pts = extract_shoreline_from_logits(logit, masked_region=args.masked_region)
+        else:
+            pts = extract_shoreline(mask, left_margin=args.left_margin, right_margin=args.right_margin)
+
         if len(pts) == 0:
             print("no shoreline found, skipping")
             continue
