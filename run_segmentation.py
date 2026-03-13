@@ -23,7 +23,7 @@ import torch
 import yaml
 from src.segmentation.postprocess import clean_mask
 from src.segmentation.predictor import BeachSegmentor
-from src.utils.io import list_images, load_annotations, load_image_rgb, save_mask
+from src.utils.io import list_images, load_annotations, load_image_rgb, save_logit, save_mask
 from src.utils.visualization import draw_points, overlay_mask, save_visualization
 
 
@@ -42,8 +42,9 @@ def main():
 
     raw_dir = Path(cfg["data"]["raw_dir"]) / args.site
     ref_dir = Path(cfg["data"]["reference_dir"]) / args.site
-    masks_dir = Path(cfg["output"]["masks_dir"]) / "points" / args.site
-    vis_dir = Path(cfg["output"]["visualizations_dir"]) / "points" / args.site
+    masks_dir  = Path(cfg["output"]["masks_dir"]) / "points" / args.site
+    logits_dir = Path(cfg["output"]["masks_dir"]).parent / "logits" / "points" / args.site
+    vis_dir    = Path(cfg["output"]["visualizations_dir"]) / "points" / args.site
 
     # Load annotations
     ann_path = ref_dir / "annotations.json"
@@ -83,10 +84,11 @@ def main():
 
         image = load_image_rgb(img_path)
         segmentor.set_image(image)
-        mask = segmentor.predict(positive_points, negative_points)
+        mask, logit = segmentor.predict(positive_points, negative_points)
         mask = clean_mask(mask)
 
         save_mask(mask, masks_dir / f"{img_path.stem}.png")
+        save_logit(logit, logits_dir / f"{img_path.stem}.npy")
 
         vis = overlay_mask(image, mask)
         vis = draw_points(vis, positive_points, negative_points)
