@@ -57,14 +57,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run SAM2 video-predictor beach segmentation for a CoastSnap site."
     )
-    parser.add_argument("--site",      required=True, help="Site name (e.g. narrabeen)")
-    parser.add_argument("--config",    default="configs/config.yaml")
-    parser.add_argument(
-        "--ref-frame",
-        type=int,
-        default=0,
-        help="Index of the frame to use as the reference prompt (default: 0).",
-    )
+    parser.add_argument("--site",   required=True, help="Site name (e.g. narrabeen)")
+    parser.add_argument("--config", default="configs/config.yaml")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -81,22 +75,33 @@ def main():
         print("Run  python tools/annotate.py --site <site>  first.")
         sys.exit(1)
 
-    annotations    = load_annotations(ann_path)
-    positive_points = annotations["positive_points"]
-    negative_points = annotations.get("negative_points", [])
-
-    if not positive_points:
-        print("annotations.json contains no positive points. Add at least one.")
-        sys.exit(1)
-
     images = list_images(raw_dir)
     if not images:
         print(f"No images found in {raw_dir}")
         sys.exit(1)
 
-    ref_frame_idx = args.ref_frame
-    if ref_frame_idx >= len(images):
-        print(f"--ref-frame {ref_frame_idx} is out of range (only {len(images)} images).")
+    # Resolve each annotation entry to its frame index in the raw image list
+    name_to_idx = {img.name: i for i, img in enumerate(images)}
+    annotation_list = load_annotations(ann_path)
+
+    # dict keyed by frame_idx → (positive_points, negative_points)
+    frame_annotations: dict[int, tuple[list, list]] = {}
+    for entry in annotation_list:
+        img_name = entry.get("image", "")
+        if img_name not in name_to_idx:
+            print(f"Warning: annotated image '{img_name}' not found in {raw_dir} — skipping.")
+            continue
+        pos = entry.get("positive_points", [])
+        neg = entry.get("negative_points", [])
+        frame_annotations[name_to_idx[img_name]] = (pos, neg)
+
+    if not frame_annotations:
+        print("No annotation entries matched images in the raw directory.")
+        print("Re-run  python tools/annotate.py --site <site>  to create annotations.")
+        sys.exit(1)
+
+    if not any(pos for pos, _ in frame_annotations.values()):
+        print("annotations.json contains no positive points. Add at least one.")
         sys.exit(1)
 
     checkpoint = Path(cfg["model"]["checkpoint"])
@@ -105,11 +110,14 @@ def main():
         print(f"Unknown checkpoint '{checkpoint.stem}'.")
         sys.exit(1)
 
-    print(f"Site:        {args.site}")
-    print(f"Images:      {len(images)}")
-    print(f"Ref frame:   {ref_frame_idx} ({images[ref_frame_idx].name})")
-    print(f"Checkpoint:  {cfg['model']['checkpoint']}")
-    print(f"Device:      {cfg['model']['device']}")
+    annotated_frames_summary = ", ".join(
+        f"{idx} ({images[idx].name})" for idx in sorted(frame_annotations)
+    )
+    print(f"Site:             {args.site}")
+    print(f"Images:           {len(images)}")
+    print(f"Annotated frames: {annotated_frames_summary}")
+    print(f"Checkpoint:       {cfg['model']['checkpoint']}")
+    print(f"Device:           {cfg['model']['device']}")
     print()
 
     predictor = build_sam2_video_predictor(
@@ -117,11 +125,6 @@ def main():
         ckpt_path=str(checkpoint),
         device=cfg["model"]["device"],
     )
-
-    all_points = positive_points + negative_points
-    all_labels = [1] * len(positive_points) + [0] * len(negative_points)
-    point_coords = np.array(all_points, dtype=np.float32)
-    point_labels = np.array(all_labels, dtype=np.int32)
 
     masks_by_frame: dict[int, np.ndarray] = {}
 
@@ -132,29 +135,23 @@ def main():
         print("Initialising video predictor ...")
         inference_state = predictor.init_state(video_path=tmp_dir)
 
-        # Prompt the reference frame with annotated points
-        predictor.add_new_points_or_box(
-            inference_state=inference_state,
-            frame_idx=ref_frame_idx,
-            obj_id=1,
-            points=point_coords,
-            labels=point_labels,
-            normalize_coords=True,
-        )
+        # Seed all annotated frames
+        for frame_idx, (pos_pts, neg_pts) in sorted(frame_annotations.items()):
+            all_points = pos_pts + neg_pts
+            all_labels = [1] * len(pos_pts) + [0] * len(neg_pts)
+            predictor.add_new_points_or_box(
+                inference_state=inference_state,
+                frame_idx=frame_idx,
+                obj_id=1,
+                points=np.array(all_points, dtype=np.float32),
+                labels=np.array(all_labels, dtype=np.int32),
+                normalize_coords=True,
+            )
 
-        # Propagate forward (ref_frame → last frame)
-        print(f"Propagating forward from frame {ref_frame_idx} ...")
+        # Propagate through all frames (starts from frame 0 by default)
+        print("Propagating through all frames ...")
         for frame_idx, _obj_ids, mask_logits in predictor.propagate_in_video(inference_state):
             masks_by_frame[frame_idx] = (mask_logits[0, 0].cpu().numpy() > 0)
-
-        # Propagate backward (ref_frame → first frame) if needed
-        if ref_frame_idx > 0:
-            print(f"Propagating backward from frame {ref_frame_idx} ...")
-            for frame_idx, _obj_ids, mask_logits in predictor.propagate_in_video(
-                inference_state, reverse=True
-            ):
-                if frame_idx not in masks_by_frame:
-                    masks_by_frame[frame_idx] = (mask_logits[0, 0].cpu().numpy() > 0)
 
     # Save masks and visualizations
     print()
@@ -175,8 +172,9 @@ def main():
         save_mask(mask, masks_dir / f"{img_path.stem}.png")
 
         vis = overlay_mask(image, mask)
-        if i == ref_frame_idx:
-            vis = draw_points(vis, positive_points, negative_points)
+        if i in frame_annotations:
+            pos_pts, neg_pts = frame_annotations[i]
+            vis = draw_points(vis, pos_pts, neg_pts)
         save_visualization(vis, vis_dir / f"{img_path.stem}.jpg")
 
         print("done")
