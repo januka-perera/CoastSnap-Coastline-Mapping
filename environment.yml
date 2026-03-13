@@ -33,6 +33,7 @@ dependencies:
       - pillow>=10.3
       - opencv-python>=4.9
       - rasterio>=1.3
+      - scikit-image>=0.22
       # SAM2 — installed separately as an editable install (see README Setup section)
       # Do NOT install via git+ URL; the config YAML files are not bundled in the pip package.
       # After creating this environment, run:
