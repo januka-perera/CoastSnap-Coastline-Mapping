@@ -53,8 +53,9 @@ def main():
         sys.exit(1)
 
     annotations = load_annotations(ann_path)
-    positive_points = annotations["positive_points"]
-    negative_points = annotations.get("negative_points", [])
+    first = annotations[0]
+    positive_points = first["positive_points"]
+    negative_points = first.get("negative_points", [])
 
     if not positive_points:
         print("annotations.json contains no positive points. Add at least one.")
