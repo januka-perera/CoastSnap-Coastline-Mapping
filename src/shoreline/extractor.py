@@ -47,28 +47,41 @@ def extract_shoreline(
     m = (mask > 0).astype(np.int8)
 
     pts = []
-    for x in range(left_margin, w - right_margin):
-        col = m[:, x]
-        # Row indices where a transition occurs (between row i and i+1)
-        transitions = np.where(np.diff(col) != 0)[0]
 
-        # Exclude transitions near the top or bottom border
-        valid = transitions[
-            (transitions >= border_margin) & (transitions < h - border_margin)
-        ]
-
-        if len(valid) == 0:
-            continue
-
-        if ocean_side == "bottom":
-            y = float(valid[-1])       # highest row = closest to bottom
-        elif ocean_side == "top":
-            y = float(valid[0])        # lowest row = closest to top
-        else:
-            # Default: closest to vertical centre
-            y = float(valid[np.argmin(np.abs(valid - h / 2))])
-
-        pts.append([float(x), y])
+    if ocean_side in ("left", "right"):
+        # Row scan: for each y row find the horizontal transition closest to the
+        # ocean edge.  Suited to vertical shorelines where ocean is left or right.
+        for y in range(border_margin, h - border_margin):
+            row = m[y, :]
+            transitions = np.where(np.diff(row) != 0)[0]
+            valid = transitions[
+                (transitions >= border_margin) & (transitions < w - border_margin)
+            ]
+            if len(valid) == 0:
+                continue
+            if ocean_side == "right":
+                x = float(valid[-1])   # rightmost transition
+            else:
+                x = float(valid[0])    # leftmost transition
+            pts.append([x, float(y)])
+    else:
+        # Column scan: for each x column find the vertical transition closest to
+        # the ocean edge.  Suited to horizontal shorelines where ocean is top/bottom.
+        for x in range(left_margin, w - right_margin):
+            col = m[:, x]
+            transitions = np.where(np.diff(col) != 0)[0]
+            valid = transitions[
+                (transitions >= border_margin) & (transitions < h - border_margin)
+            ]
+            if len(valid) == 0:
+                continue
+            if ocean_side == "bottom":
+                y = float(valid[-1])
+            elif ocean_side == "top":
+                y = float(valid[0])
+            else:
+                y = float(valid[np.argmin(np.abs(valid - h / 2))])
+            pts.append([float(x), y])
 
     if not pts:
         return np.empty((0, 2), dtype=np.float32)
@@ -154,31 +167,33 @@ def extract_shoreline_from_logits(
     longest = max(valid, key=len)
 
     if ocean_side is not None:
-        # Split the closed contour at its leftmost and rightmost x-extrema.
-        # This produces two paths, each running from one x-extreme to the other.
-        # One path faces the ocean, the other faces land/headlands.  Select the
-        # ocean-facing half based on which has its mean position closest to the
-        # specified ocean edge.
-        cols_arr = longest[:, 1]
-        left_idx = int(np.argmin(cols_arr))
-        right_idx = int(np.argmax(cols_arr))
+        # Split the closed contour at its two extrema along the axis perpendicular
+        # to the shoreline.  For a horizontal shoreline (ocean top/bottom) split at
+        # x-extrema (leftmost/rightmost points); for a vertical shoreline (ocean
+        # left/right) split at y-extrema (topmost/bottommost points).  This gives
+        # two paths each running the full length of the beach.  Select the half
+        # whose mean position is closest to the specified ocean edge.
+        if ocean_side in ("top", "bottom"):
+            axis = 1  # split at x-extrema; compare by row (y)
+            compare_axis = 0
+        else:  # "left" or "right"
+            axis = 0  # split at y-extrema; compare by col (x)
+            compare_axis = 1
 
-        if left_idx > right_idx:
-            left_idx, right_idx = right_idx, left_idx
+        values = longest[:, axis]
+        lo_idx = int(np.argmin(values))
+        hi_idx = int(np.argmax(values))
 
-        half1 = longest[left_idx:right_idx + 1]
-        half2 = np.concatenate([longest[right_idx:], longest[:left_idx + 1]])
+        if lo_idx > hi_idx:
+            lo_idx, hi_idx = hi_idx, lo_idx
 
-        if ocean_side == "bottom":
-            chosen = half1 if half1[:, 0].mean() >= half2[:, 0].mean() else half2
-        elif ocean_side == "top":
-            chosen = half1 if half1[:, 0].mean() <= half2[:, 0].mean() else half2
-        elif ocean_side == "left":
-            chosen = half1 if half1[:, 1].mean() <= half2[:, 1].mean() else half2
-        elif ocean_side == "right":
-            chosen = half1 if half1[:, 1].mean() >= half2[:, 1].mean() else half2
-        else:
-            chosen = longest
+        half1 = longest[lo_idx:hi_idx + 1]
+        half2 = np.concatenate([longest[hi_idx:], longest[:lo_idx + 1]])
+
+        if ocean_side in ("bottom", "right"):
+            chosen = half1 if half1[:, compare_axis].mean() >= half2[:, compare_axis].mean() else half2
+        else:  # "top" or "left"
+            chosen = half1 if half1[:, compare_axis].mean() <= half2[:, compare_axis].mean() else half2
     else:
         chosen = longest
 
