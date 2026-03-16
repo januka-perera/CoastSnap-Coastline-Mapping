@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.shoreline.extractor import extract_shoreline, extract_shoreline_from_logits, smooth_shoreline
 from src.utils.io import list_images, load_image_rgb, load_logit
-from src.utils.visualization import draw_shoreline, overlay_mask, save_visualization
+from src.utils.visualization import draw_shoreline, save_visualization
 
 
 def load_config(path: str | Path) -> dict:
@@ -61,6 +61,14 @@ def main():
         help="Which region was segmented (default: sand). "
              "If 'ocean', the mask is inverted before extraction so the "
              "sand-facing boundary is treated as the shoreline.",
+    )
+    parser.add_argument(
+        "--ocean-side",
+        default=None,
+        choices=["top", "bottom", "left", "right"],
+        help="Which image edge the ocean is closest to. When set, the contour is "
+             "split at its x-extrema and the ocean-facing half is selected, "
+             "discarding headland and vegetation boundaries on the opposite side.",
     )
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument(
@@ -100,6 +108,7 @@ def main():
     print(f"Site:           {args.site}")
     print(f"Mode:           {args.mode}")
     print(f"Masked region:  {args.masked_region}")
+    print(f"Ocean side:     {args.ocean_side or 'auto (longest contour)'}")
     print(f"Source:         {source_label}")
     print(f"Masks:          {len(mask_paths)}")
     print()
@@ -116,9 +125,20 @@ def main():
         logit_path = logits_dir / f"{stem}.npy"
         if use_logits and logit_path.exists():
             logit = load_logit(logit_path)
-            pts = extract_shoreline_from_logits(logit, masked_region=args.masked_region)
+            pts = extract_shoreline_from_logits(
+                logit,
+                masked_region=args.masked_region,
+                left_margin=args.left_margin,
+                right_margin=args.right_margin,
+                ocean_side=args.ocean_side,
+            )
         else:
-            pts = extract_shoreline(mask, left_margin=args.left_margin, right_margin=args.right_margin)
+            pts = extract_shoreline(
+                mask,
+                left_margin=args.left_margin,
+                right_margin=args.right_margin,
+                ocean_side=args.ocean_side,
+            )
 
         if len(pts) == 0:
             print("no shoreline found, skipping")
@@ -133,8 +153,7 @@ def main():
             h, w = mask.shape
             image = np.full((h, w, 3), 40, dtype=np.uint8)
 
-        vis = overlay_mask(image, mask)
-        vis = draw_shoreline(vis, pts)
+        vis = draw_shoreline(image, pts)
 
         save_visualization(vis, out_dir / f"{stem}.jpg")
         np.save(out_dir / f"{stem}.npy", pts)
