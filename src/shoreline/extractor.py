@@ -8,6 +8,7 @@ def extract_shoreline(
     border_margin: int = 5,
     left_margin: int = 0,
     right_margin: int = 0,
+    ocean_side: str | None = None,
 ) -> np.ndarray:
     """
     Extract shoreline (x, y) pixel coordinates from a binary mask.
@@ -30,6 +31,11 @@ def extract_shoreline(
         Number of columns to skip at the left edge of the image.
     right_margin : int
         Number of columns to skip at the right edge of the image.
+    ocean_side : str or None
+        Which image edge the ocean is closest to: ``"top"``, ``"bottom"``,
+        ``"left"``, or ``"right"``.  When set, selects the transition nearest
+        that edge rather than nearest the image centre.  ``None`` (default)
+        keeps the existing closest-to-centre behaviour.
 
     Returns
     -------
@@ -54,9 +60,14 @@ def extract_shoreline(
         if len(valid) == 0:
             continue
 
-        # If multiple valid transitions remain (e.g. noise patches), use the
-        # one closest to the vertical centre of the image as the shoreline.
-        y = float(valid[np.argmin(np.abs(valid - h / 2))])
+        if ocean_side == "bottom":
+            y = float(valid[-1])       # highest row = closest to bottom
+        elif ocean_side == "top":
+            y = float(valid[0])        # lowest row = closest to top
+        else:
+            # Default: closest to vertical centre
+            y = float(valid[np.argmin(np.abs(valid - h / 2))])
+
         pts.append([float(x), y])
 
     if not pts:
@@ -70,6 +81,9 @@ def extract_shoreline_from_logits(
     masked_region: str = "sand",
     border_margin: int = 5,
     min_length: int = 50,
+    left_margin: int = 0,
+    right_margin: int = 0,
+    ocean_side: str | None = None,
 ) -> np.ndarray:
     """
     Extract shoreline (x, y) coordinates as the zero contour of a SAM2 logit field.
@@ -93,6 +107,19 @@ def extract_shoreline_from_logits(
     min_length : int
         Minimum number of points a contour must have to be considered. Filters
         out small noise blobs.
+    left_margin : int
+        Columns to skip at the left image edge. Contour points with x < this
+        value are excluded.
+    right_margin : int
+        Columns to skip at the right image edge. Contour points with x > w - this
+        value are excluded.
+    ocean_side : str or None
+        Which image edge the ocean is closest to: ``"top"``, ``"bottom"``,
+        ``"left"``, or ``"right"``.  When set, the closed contour is split at
+        its x-extrema into two halves and the half whose mean position is
+        closest to the specified ocean edge is selected.  This reliably
+        discards headland and vegetation boundaries on the opposite side.
+        ``None`` (default) returns the longest contour without splitting.
 
     Returns
     -------
@@ -107,28 +134,67 @@ def extract_shoreline_from_logits(
     if not contours:
         return np.empty((0, 2), dtype=np.float32)
 
-    # Filter: minimum length and not entirely within the image border
+    # Filter to contours that are long enough and have interior (non-border) points
     valid = []
     for c in contours:
         if len(c) < min_length:
             continue
         rows, cols = c[:, 0], c[:, 1]
-        # Keep contour if it has points away from all four borders
         interior = (
             (rows >= border_margin) & (rows < h - border_margin) &
             (cols >= border_margin) & (cols < w - border_margin)
         )
         if interior.sum() < min_length:
             continue
-        valid.append(c[interior])
+        valid.append(c)  # keep the full closed contour for half-selection
 
     if not valid:
         return np.empty((0, 2), dtype=np.float32)
 
-    # Return the longest valid contour, converted from (row, col) to (x, y)
     longest = max(valid, key=len)
-    pts = np.column_stack([longest[:, 1], longest[:, 0]]).astype(np.float32)
-    return pts
+
+    if ocean_side is not None:
+        # Split the closed contour at its leftmost and rightmost x-extrema.
+        # This produces two paths, each running from one x-extreme to the other.
+        # One path faces the ocean, the other faces land/headlands.  Select the
+        # ocean-facing half based on which has its mean position closest to the
+        # specified ocean edge.
+        cols_arr = longest[:, 1]
+        left_idx = int(np.argmin(cols_arr))
+        right_idx = int(np.argmax(cols_arr))
+
+        if left_idx > right_idx:
+            left_idx, right_idx = right_idx, left_idx
+
+        half1 = longest[left_idx:right_idx + 1]
+        half2 = np.concatenate([longest[right_idx:], longest[:left_idx + 1]])
+
+        if ocean_side == "bottom":
+            chosen = half1 if half1[:, 0].mean() >= half2[:, 0].mean() else half2
+        elif ocean_side == "top":
+            chosen = half1 if half1[:, 0].mean() <= half2[:, 0].mean() else half2
+        elif ocean_side == "left":
+            chosen = half1 if half1[:, 1].mean() <= half2[:, 1].mean() else half2
+        elif ocean_side == "right":
+            chosen = half1 if half1[:, 1].mean() >= half2[:, 1].mean() else half2
+        else:
+            chosen = longest
+    else:
+        chosen = longest
+
+    # Apply border and margin filters to the chosen segment
+    rows, cols_arr = chosen[:, 0], chosen[:, 1]
+    keep = (
+        (rows >= border_margin) & (rows < h - border_margin) &
+        (cols_arr >= border_margin) & (cols_arr < w - border_margin) &
+        (cols_arr >= left_margin) & (cols_arr <= w - right_margin)
+    )
+    chosen = chosen[keep]
+
+    if len(chosen) == 0:
+        return np.empty((0, 2), dtype=np.float32)
+
+    return np.column_stack([chosen[:, 1], chosen[:, 0]]).astype(np.float32)
 
 
 def smooth_shoreline(
